@@ -1,0 +1,4 @@
+__pycache__/
+venv/
+postgres_data/
+pgadmin_data/
