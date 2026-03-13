@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import date, datetime
 from typing import Optional
 import uuid
+
 
 class TripCreate(BaseModel):
     title: str
@@ -11,7 +12,10 @@ class TripCreate(BaseModel):
     budget: Optional[float] = None
     description: Optional[str] = None
 
+
 class TripResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     title: str
     destination: str
@@ -22,6 +26,3 @@ class TripResponse(BaseModel):
     created_by: uuid.UUID
     created_at: datetime
     updated_at: Optional[datetime] = None
-    
-    class Config:
-        from_attributes = True

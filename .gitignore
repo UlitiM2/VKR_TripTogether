@@ -2,3 +2,7 @@ __pycache__/
 venv/
 postgres_data/
 pgadmin_data/
+
+# Документы и текстовые файлы (не выгружаем в репозиторий)
+*.doc
+*.docx

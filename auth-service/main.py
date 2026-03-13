@@ -1,10 +1,11 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 import logging
 
+from sqlalchemy import func
 from config import settings
 from db.db import engine, Base, get_db
 from security import (
@@ -179,6 +180,30 @@ async def read_users_me(current_user_id: str = Depends(get_current_user), db=Dep
         )
     
     return user
+
+
+@app.get("/auth/internal/user-by-email")
+async def get_user_id_by_email(
+    email: str = Query(..., description="Email пользователя"),
+    db=Depends(get_db),
+):
+    """
+    Внутренний эндпоинт для сервисов (trip-service).
+    Возвращает id пользователя по email. Вызывается только из внутренней сети.
+    """
+    user = db.query(User).filter(func.lower(User.email) == email.lower().strip()).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User with this email not found",
+        )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is inactive",
+        )
+    return {"id": str(user.id)}
+
 
 if __name__ == "__main__":
     import uvicorn

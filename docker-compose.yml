@@ -89,6 +89,44 @@ services:
     networks:
       - app-network
 
+  voting-service:
+    build: ./voting-service
+    container_name: tripplanner-voting
+    ports:
+      - "8004:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres/tripplanner
+      - AUTH_SERVICE_URL=http://auth-service:8000
+      - TRIP_SERVICE_URL=http://trip-service:8000
+    depends_on:
+      - auth-service
+      - trip-service
+      - postgres
+    volumes:
+      - ./voting-service:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - app-network
+
+  budget-service:
+    build: ./budget-service
+    container_name: tripplanner-budget
+    ports:
+      - "8005:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres/tripplanner
+      - AUTH_SERVICE_URL=http://auth-service:8000
+      - TRIP_SERVICE_URL=http://trip-service:8000
+    depends_on:
+      - auth-service
+      - trip-service
+      - postgres
+    volumes:
+      - ./budget-service:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - app-network
+
 volumes:
   postgres_data:
   pgadmin_data:
