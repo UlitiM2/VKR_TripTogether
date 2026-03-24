@@ -15,12 +15,10 @@ class Poll(Base):
         default=uuid.uuid4,
         index=True,
     )
-    trip_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("trips.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    # Ссылка на поездку. В продакшене связь проверяется через trip-service,
+    # поэтому внешний ключ на таблицу trips (в другой сервисной схеме) убираем,
+    # чтобы не падать при создании таблиц.
+    trip_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     created_by = Column(UUID(as_uuid=True), nullable=False, index=True)
     question = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=func.now())

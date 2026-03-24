@@ -1,8 +1,36 @@
 __pycache__/
 venv/
+.venv/
+env/
+.env
+.env.*
 postgres_data/
 pgadmin_data/
+.vscode/
+*.log
+*.sqlite3
+*.db
+*.tsbuildinfo
+
+# Python cache/artifacts
+*.pyc
+*.pyo
+*.pytest_cache/
+
+# Frontend artifacts
+frontend/node_modules/
+frontend/dist/
+
+# OS files
+.DS_Store
+Thumbs.db
 
 # Документы и текстовые файлы (не выгружаем в репозиторий)
 *.doc
 *.docx
+
+# Локальные ВКР-черновики/заметки
+vkr_backend_frontend_text.txt
+vkr_text.txt
+ОБЗОР_ВКР_И_ПЛАН.md
+BKP.docx

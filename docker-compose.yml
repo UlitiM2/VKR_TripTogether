@@ -35,6 +35,16 @@ services:
     networks:
       - app-network
 
+  redis:
+    image: redis:7-alpine
+    container_name: tripplanner-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network
+
   auth-service:
     build: ./auth-service
     container_name: tripplanner-auth
@@ -70,6 +80,23 @@ services:
     networks:
       - app-network
 
+  notification-service:
+    build: ./notification-service
+    container_name: tripplanner-notification
+    ports:
+      - "8007:8000"
+    environment:
+      - SMTP_HOST=
+      - SMTP_PORT=587
+      - SMTP_USER=
+      - SMTP_PASSWORD=
+      - FROM_EMAIL=noreply@tripplanner.local
+    volumes:
+      - ./notification-service:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - app-network
+
   trip-service:
     build: ./trip-service
     container_name: tripplanner-trip
@@ -78,10 +105,12 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres/tripplanner
       - AUTH_SERVICE_URL=http://auth-service:8000
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8000
       - SECRET_KEY= # тут ключ
       - ALGORITHM=HS256
     depends_on:
       - auth-service
+      - notification-service
       - postgres
     volumes:
       - ./trip-service:/app
@@ -96,12 +125,16 @@ services:
       - "8004:8000"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres/tripplanner
+      - REDIS_URL=redis://redis:6379/0
       - AUTH_SERVICE_URL=http://auth-service:8000
       - TRIP_SERVICE_URL=http://trip-service:8000
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8000
     depends_on:
       - auth-service
       - trip-service
+      - notification-service
       - postgres
+      - redis
     volumes:
       - ./voting-service:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
@@ -127,9 +160,31 @@ services:
     networks:
       - app-network
 
+  chat-service:
+    build: ./chat-service
+    container_name: tripplanner-chat
+    ports:
+      - "8006:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres/tripplanner
+      - AUTH_SERVICE_URL=http://auth-service:8000
+      - TRIP_SERVICE_URL=http://trip-service:8000
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8000
+    depends_on:
+      - auth-service
+      - trip-service
+      - notification-service
+      - postgres
+    volumes:
+      - ./chat-service:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - app-network
+
 volumes:
   postgres_data:
   pgadmin_data:
+  redis_data:
 
 networks:
   app-network:

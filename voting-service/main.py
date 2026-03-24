@@ -9,6 +9,15 @@ import httpx
 
 from db.db import engine, Base, get_db
 from models.poll import Poll, PollOption, PollVote
+from cache import (
+    init_redis,
+    close_redis,
+    cache_get_poll,
+    cache_get_trip_polls,
+    cache_set_poll,
+    cache_set_trip_polls,
+    cache_invalidate_poll,
+)
 from schemas.poll import (
     PollCreate,
     PollResponse,
@@ -26,6 +35,7 @@ security = HTTPBearer()
 
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
 TRIP_SERVICE_URL = os.getenv("TRIP_SERVICE_URL", "http://trip-service:8000")
+NOTIFICATION_SERVICE_URL = os.getenv("NOTIFICATION_SERVICE_URL", "http://notification-service:8000")
 
 
 async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -84,9 +94,13 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Voting Service")
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created")
-    yield
-    logger.info("Voting Service stopped")
-    engine.dispose()
+    await init_redis()
+    try:
+        yield
+    finally:
+        await close_redis()
+        logger.info("Voting Service stopped")
+        engine.dispose()
 
 
 app = FastAPI(
@@ -115,7 +129,11 @@ async def health():
     return {"status": "healthy", "service": "voting-service"}
 
 
-def _poll_response_with_results(db: Session, poll: Poll) -> PollResponse:
+def _poll_response_with_results(
+    db: Session,
+    poll: Poll,
+    my_option_id: uuid.UUID | None = None,
+) -> PollResponse:
     options = (
         db.query(PollOption)
         .filter(PollOption.poll_id == poll.id)
@@ -149,6 +167,7 @@ def _poll_response_with_results(db: Session, poll: Poll) -> PollResponse:
         question=poll.question,
         created_at=poll.created_at,
         options=option_responses,
+        my_option_id=my_option_id,
     )
 
 
@@ -205,7 +224,39 @@ async def create_poll(
     db.commit()
     db.refresh(poll)
     logger.info(f"Poll created: {poll.id} in trip {trip_id}")
-    return _poll_response_with_results(db, poll)
+
+    resp = _poll_response_with_results(db, poll)
+    await cache_set_poll(resp)
+    await cache_invalidate_poll(str(poll.id), trip_id)
+
+    # Уведомление участникам поездки о новом голосовании
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.get(f"{TRIP_SERVICE_URL}/trips/{trip_id}/internal/participant-ids", timeout=5.0)
+            if r.status_code != 200:
+                raise ValueError("participant-ids failed")
+            ids = r.json().get("user_ids", [])
+            r2 = await client.get(f"{TRIP_SERVICE_URL}/trips/{trip_id}/internal/info", timeout=5.0)
+            trip_title = (r2.json().get("title") or "Поездка") if r2.status_code == 200 else "Поездка"
+            to_emails = []
+            for uid in ids:
+                ru = await client.get(f"{AUTH_SERVICE_URL}/auth/internal/user/{uid}", timeout=5.0)
+                if ru.status_code == 200 and ru.json().get("email"):
+                    to_emails.append(ru.json()["email"])
+            if to_emails:
+                await client.post(
+                    f"{NOTIFICATION_SERVICE_URL}/internal/send",
+                    json={
+                        "event": "new_poll",
+                        "to_emails": to_emails,
+                        "data": {"trip_title": trip_title, "question": body.question or "Новый опрос"},
+                    },
+                    timeout=5.0,
+                )
+        except (httpx.RequestError, ValueError) as e:
+            logger.warning("Failed to send new_poll notification: %s", e)
+
+    return resp
 
 
 @app.get("/trips/{trip_id}/polls", response_model=list[PollResponse])
@@ -215,7 +266,18 @@ async def list_polls(
     trip_access: dict = Depends(check_trip_access),
     db: Session = Depends(get_db),
 ):
-    """Список опросов поездки с результатами."""
+    """Список опросов поездки с результатами (с кэшем Redis)."""
+    user_uuid = _get_user_uuid(user_data)
+    cached = await cache_get_trip_polls(trip_id)
+    if cached is not None:
+        poll_ids = [p.id for p in cached]
+        votes = (
+            db.query(PollVote.poll_id, PollVote.option_id)
+            .filter(PollVote.user_id == user_uuid, PollVote.poll_id.in_(poll_ids))
+            .all()
+        ) if poll_ids else []
+        vote_map = {pid: oid for pid, oid in votes}
+        return [p.model_copy(update={"my_option_id": vote_map.get(p.id)}) for p in cached]
     trip_uuid = _parse_trip_id(trip_id)
     polls = (
         db.query(Poll)
@@ -223,7 +285,18 @@ async def list_polls(
         .order_by(Poll.created_at.desc())
         .all()
     )
-    return [_poll_response_with_results(db, p) for p in polls]
+    poll_ids = [p.id for p in polls]
+    votes = (
+        db.query(PollVote.poll_id, PollVote.option_id)
+        .filter(PollVote.user_id == user_uuid, PollVote.poll_id.in_(poll_ids))
+        .all()
+    ) if poll_ids else []
+    vote_map = {pid: oid for pid, oid in votes}
+    result = [_poll_response_with_results(db, p, my_option_id=vote_map.get(p.id)) for p in polls]
+    await cache_set_trip_polls(trip_id, result)
+    for p in result:
+        await cache_set_poll(p)
+    return result
 
 
 @app.get("/trips/{trip_id}/polls/{poll_id}", response_model=PollResponse)
@@ -234,7 +307,16 @@ async def get_poll(
     trip_access: dict = Depends(check_trip_access),
     db: Session = Depends(get_db),
 ):
-    """Получить опрос с результатами."""
+    """Получить опрос с результатами (с кэшем Redis)."""
+    user_uuid = _get_user_uuid(user_data)
+    cached = await cache_get_poll(poll_id)
+    if cached is not None:
+        my_vote = (
+            db.query(PollVote)
+            .filter(PollVote.poll_id == cached.id, PollVote.user_id == user_uuid)
+            .first()
+        )
+        return cached.model_copy(update={"my_option_id": my_vote.option_id if my_vote else None})
     trip_uuid = _parse_trip_id(trip_id)
     poll_uuid = _parse_poll_id(poll_id)
     poll = (
@@ -244,7 +326,14 @@ async def get_poll(
     )
     if not poll:
         raise HTTPException(status_code=404, detail="Poll not found")
-    return _poll_response_with_results(db, poll)
+    my_vote = (
+        db.query(PollVote)
+        .filter(PollVote.poll_id == poll.id, PollVote.user_id == user_uuid)
+        .first()
+    )
+    result = _poll_response_with_results(db, poll, my_option_id=my_vote.option_id if my_vote else None)
+    await cache_set_poll(result)
+    return result
 
 
 @app.post("/trips/{trip_id}/polls/{poll_id}/options", response_model=PollResponse)
@@ -271,7 +360,14 @@ async def add_poll_option(
     db.add(opt)
     db.commit()
     db.refresh(poll)
-    return _poll_response_with_results(db, poll)
+    await cache_invalidate_poll(poll_id, trip_id)
+    user_uuid = _get_user_uuid(user_data)
+    my_vote = (
+        db.query(PollVote)
+        .filter(PollVote.poll_id == poll.id, PollVote.user_id == user_uuid)
+        .first()
+    )
+    return _poll_response_with_results(db, poll, my_option_id=my_vote.option_id if my_vote else None)
 
 
 @app.post("/trips/{trip_id}/polls/{poll_id}/vote", response_model=PollResponse)
@@ -318,4 +414,37 @@ async def vote_poll(
         db.add(vote)
         db.commit()
         db.refresh(poll)
-    return _poll_response_with_results(db, poll)
+    await cache_invalidate_poll(poll_id, trip_id)
+    return _poll_response_with_results(db, poll, my_option_id=body.option_id)
+
+
+@app.delete("/trips/{trip_id}/polls/{poll_id}")
+async def delete_poll(
+    trip_id: str,
+    poll_id: str,
+    user_data: dict = Depends(verify_token),
+    trip_access: dict = Depends(check_trip_access),
+    db: Session = Depends(get_db),
+):
+    """Удалить опрос. Разрешено только автору опроса."""
+    user_uuid = _get_user_uuid(user_data)
+    trip_uuid = _parse_trip_id(trip_id)
+    poll_uuid = _parse_poll_id(poll_id)
+    poll = (
+        db.query(Poll)
+        .filter(Poll.id == poll_uuid, Poll.trip_id == trip_uuid)
+        .first()
+    )
+    if not poll:
+        raise HTTPException(status_code=404, detail="Poll not found")
+    if poll.created_by != user_uuid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only poll author can delete poll",
+        )
+    db.query(PollVote).filter(PollVote.poll_id == poll.id).delete()
+    db.query(PollOption).filter(PollOption.poll_id == poll.id).delete()
+    db.delete(poll)
+    db.commit()
+    await cache_invalidate_poll(poll_id, trip_id)
+    return {"message": "Poll deleted"}

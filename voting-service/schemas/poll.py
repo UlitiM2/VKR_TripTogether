@@ -1,5 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
+from typing import Optional
 import uuid
 
 
@@ -32,6 +33,7 @@ class PollResponse(BaseModel):
     question: str
     created_at: datetime
     options: list[PollOptionResponse] = []
+    my_option_id: Optional[uuid.UUID] = None
 
 
 class PollVoteCreate(BaseModel):

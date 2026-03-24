@@ -10,6 +10,7 @@ class ExpenseCreate(BaseModel):
     amount: float = Field(..., gt=0)
     category: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = None
+    paid_by_user_id: Optional[uuid.UUID] = None
     split_between: list[uuid.UUID] = Field(..., min_length=1)
 
 

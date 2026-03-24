@@ -11,7 +11,7 @@ import httpx
 from db.db import engine, Base, get_db
 from models.trip import Trip
 from models.participant import TripParticipant, ParticipantRole
-from schemas.trip import TripCreate, TripResponse
+from schemas.trip import TripCreate, TripResponse, TripUpdate
 from schemas.participant import InviteCreate, InviteResponse, ParticipantResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 security = HTTPBearer()
 
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
+NOTIFICATION_SERVICE_URL = os.getenv("NOTIFICATION_SERVICE_URL", "http://notification-service:8000")
+NOTIFICATION_SERVICE_URL = os.getenv("NOTIFICATION_SERVICE_URL", "http://notification-service:8000")
 
 async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Верификация токена через Auth Service"""
@@ -44,6 +46,21 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
             return response.json()
         except httpx.RequestError:
             raise HTTPException(status_code=503, detail="Auth service unavailable")
+
+
+async def fetch_user_by_id(user_id: uuid.UUID) -> dict | None:
+    """Получить данные пользователя по id через Auth (для уведомлений)."""
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.get(
+                f"{AUTH_SERVICE_URL}/auth/internal/user/{user_id}",
+                timeout=5.0,
+            )
+            if r.status_code != 200:
+                return None
+            return r.json()
+        except httpx.RequestError:
+            return None
 
 
 async def resolve_user_id_by_email(email: str) -> uuid.UUID:
@@ -243,7 +260,12 @@ async def get_trips(
     )
 
     logger.info(f"Returning {len(trips)} trips for user {user_id}")
-    return trips
+    return [
+        TripResponse.model_validate(t).model_copy(
+            update={"is_organizer": is_trip_organizer(t, user_id, db)}
+        )
+        for t in trips
+    ]
 
 @app.get("/trips/{trip_id}", response_model=TripResponse)
 async def get_trip(
@@ -254,7 +276,57 @@ async def get_trip(
     """Получение конкретной поездки (доступно создателю и участникам)."""
     user_uuid = uuid.UUID(user_data.get("user_id") or user_data.get("sub"))
     trip = get_trip_if_accessible(db, trip_id, user_uuid)
-    return trip
+    return TripResponse.model_validate(trip).model_copy(
+        update={"is_organizer": is_trip_organizer(trip, user_uuid, db)}
+    )
+
+
+@app.patch("/trips/{trip_id}", response_model=TripResponse)
+async def update_trip(
+    trip_id: str,
+    body: TripUpdate,
+    user_data: dict = Depends(verify_token),
+    db: Session = Depends(get_db),
+):
+    """Обновление поездки (название/направление/даты) — только организатор."""
+    user_uuid = uuid.UUID(user_data.get("user_id") or user_data.get("sub"))
+    trip = get_trip_if_accessible(db, trip_id, user_uuid)
+    if not is_trip_organizer(trip, user_uuid, db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only trip organizer can update the trip",
+        )
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields to update",
+        )
+    if "title" in updates:
+        new_title = (updates["title"] or "").strip()
+        if not new_title:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Title cannot be empty",
+            )
+        trip.title = new_title
+    if "destination" in updates:
+        destination = (updates["destination"] or "").strip()
+        trip.destination = destination or None
+    if "start_date" in updates:
+        trip.start_date = updates["start_date"]
+    if "end_date" in updates:
+        trip.end_date = updates["end_date"]
+    if trip.start_date and trip.end_date and trip.start_date > trip.end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Start date cannot be after end date",
+        )
+    db.commit()
+    db.refresh(trip)
+    return TripResponse.model_validate(trip).model_copy(
+        update={"is_organizer": is_trip_organizer(trip, user_uuid, db)}
+    )
 
 @app.delete("/trips/{trip_id}")
 async def delete_trip(
@@ -329,6 +401,27 @@ async def invite_participant(
     db.commit()
     db.refresh(participant)
 
+    # Уведомление на email приглашённому
+    invitee_user = await fetch_user_by_id(invitee_id)
+    inviter_user = await fetch_user_by_id(user_uuid)
+    if invitee_user and inviter_user and invitee_user.get("email"):
+        async with httpx.AsyncClient() as client:
+            try:
+                await client.post(
+                    f"{NOTIFICATION_SERVICE_URL}/internal/send",
+                    json={
+                        "event": "invite",
+                        "to_emails": [invitee_user["email"]],
+                        "data": {
+                            "trip_title": trip.title or "Поездка",
+                            "inviter_name": inviter_user.get("full_name") or inviter_user.get("username") or "Участник",
+                        },
+                    },
+                    timeout=5.0,
+                )
+            except httpx.RequestError as e:
+                logger.warning("Failed to send invite notification: %s", e)
+
     logger.info(f"Invited user {invitee_id} to trip {trip_id}")
     return InviteResponse(
         message="Invitation sent",
@@ -351,6 +444,43 @@ async def list_participants(
         .all()
     )
     return participants
+
+
+@app.get("/trips/{trip_id}/internal/info")
+async def get_trip_info_internal(
+    trip_id: str,
+    db: Session = Depends(get_db),
+):
+    """Внутренний эндпоинт: название поездки для уведомлений."""
+    try:
+        trip_uuid = uuid.UUID(trip_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid trip_id")
+    trip = db.query(Trip).filter(Trip.id == trip_uuid).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    return {"title": trip.title or "Поездка"}
+
+
+@app.get("/trips/{trip_id}/internal/participant-ids")
+async def get_participant_ids_internal(
+    trip_id: str,
+    db: Session = Depends(get_db),
+):
+    """Внутренний эндпоинт для notification-service: список user_id участников поездки."""
+    try:
+        trip_uuid = uuid.UUID(trip_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid trip_id")
+    trip = db.query(Trip).filter(Trip.id == trip_uuid).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    participants = (
+        db.query(TripParticipant.user_id)
+        .filter(TripParticipant.trip_id == trip_uuid)
+        .all()
+    )
+    return {"user_ids": [str(p.user_id) for p in participants]}
 
 
 @app.get("/trips/{trip_id}/internal/check-access")
