@@ -198,13 +198,14 @@ async def add_expense(
     trip_access: dict = Depends(check_trip_access),
     db: Session = Depends(get_db),
 ):
-    """Добавить расход. Плательщик — текущий пользователь. split_between — между кем делим (включая себя)."""
+    """Добавить расход. split_between — между кем делим (включая себя)."""
     user_uuid = _get_user_uuid(user_data)
     trip_uuid = _parse_uuid(trip_id, "Trip")
+    payer_uuid = body.paid_by_user_id or user_uuid
 
     expense = Expense(
         trip_id=trip_uuid,
-        paid_by_user_id=user_uuid,
+        paid_by_user_id=payer_uuid,
         amount=Decimal(str(body.amount)),
         category=body.category,
         description=body.description,
@@ -277,6 +278,36 @@ async def get_debts(
     trip_uuid = _parse_uuid(trip_id, "Trip")
     debts = _compute_debts(db, trip_uuid)
     return DebtsSummary(debts=debts)
+
+
+@app.delete("/trips/{trip_id}/expenses/{expense_id}")
+async def delete_expense(
+    trip_id: str,
+    expense_id: str,
+    user_data: dict = Depends(verify_token),
+    trip_access: dict = Depends(check_trip_access),
+    db: Session = Depends(get_db),
+):
+    """Удалить расход. Разрешено только тому, кто оплатил расход."""
+    user_uuid = _get_user_uuid(user_data)
+    trip_uuid = _parse_uuid(trip_id, "Trip")
+    exp_uuid = _parse_uuid(expense_id, "Expense")
+    expense = (
+        db.query(Expense)
+        .filter(Expense.id == exp_uuid, Expense.trip_id == trip_uuid)
+        .first()
+    )
+    if not expense:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    if expense.paid_by_user_id != user_uuid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only expense payer can delete expense",
+        )
+    db.query(ExpenseShare).filter(ExpenseShare.expense_id == expense.id).delete()
+    db.delete(expense)
+    db.commit()
+    return {"message": "Expense deleted"}
 
 
 if __name__ == "__main__":

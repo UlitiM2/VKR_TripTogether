@@ -17,7 +17,6 @@ class Expense(Base):
     )
     trip_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("trips.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

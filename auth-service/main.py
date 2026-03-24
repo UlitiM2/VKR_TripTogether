@@ -1,6 +1,8 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Query
+from typing import Optional
+from fastapi import FastAPI, Depends, HTTPException, status, Query, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
+from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 import logging
@@ -120,8 +122,8 @@ async def register(user_data: UserCreate, db=Depends(get_db)):
 
 @app.post("/auth/login", response_model=Token)
 async def login(
-    username: str,
-    password: str,
+    username: str = Form(...),
+    password: str = Form(...),
     db=Depends(get_db)
 ):
     """Аутентификация пользователя"""
@@ -169,17 +171,60 @@ async def verify(token: str = Depends(oauth2_scheme)):
         "email": payload.get("email")
     }
 
-@app.get("/auth/me")
+@app.get("/auth/me", response_model=UserResponse)
 async def read_users_me(current_user_id: str = Depends(get_current_user), db=Depends(get_db)):
-    """Получение информации о текущем пользователе"""
+    """Получение информации о текущем пользователе (без пароля)."""
     user = db.query(User).filter(User.id == current_user_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    
     return user
+
+
+class UserUpdate(BaseModel):
+    """Обновление профиля (PATCH /auth/me)."""
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
+@app.patch("/auth/me", response_model=UserResponse)
+async def update_me(
+    body: UserUpdate,
+    current_user_id: str = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Обновление профиля: имя, URL аватара."""
+    user = db.query(User).filter(User.id == current_user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if "full_name" in body.model_fields_set:
+        user.full_name = body.full_name
+    if "avatar_url" in body.model_fields_set:
+        user.avatar_url = body.avatar_url
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.get("/auth/internal/user/{user_id}")
+async def get_user_by_id_internal(
+    user_id: str,
+    db=Depends(get_db),
+):
+    """Внутренний эндпоинт: данные пользователя по id (для user-service, уведомлений)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "username": user.username,
+        "full_name": user.full_name,
+        "avatar_url": user.avatar_url,
+        "is_active": user.is_active,
+    }
 
 
 @app.get("/auth/internal/user-by-email")

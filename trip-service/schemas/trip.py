@@ -6,11 +6,18 @@ import uuid
 
 class TripCreate(BaseModel):
     title: str
-    destination: str
+    destination: Optional[str] = None
     start_date: date
     end_date: date
     budget: Optional[float] = None
     description: Optional[str] = None
+
+
+class TripUpdate(BaseModel):
+    title: Optional[str] = None
+    destination: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
 
 
 class TripResponse(BaseModel):
@@ -18,7 +25,7 @@ class TripResponse(BaseModel):
 
     id: uuid.UUID
     title: str
-    destination: str
+    destination: Optional[str] = None
     start_date: date
     end_date: date
     budget: Optional[float] = None
@@ -26,3 +33,4 @@ class TripResponse(BaseModel):
     created_by: uuid.UUID
     created_at: datetime
     updated_at: Optional[datetime] = None
+    is_organizer: bool = False
