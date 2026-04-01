@@ -50,6 +50,6 @@ export function getMe() {
   return apiAuth.get<UserMe>('/me')
 }
 
-export function updateMe(data: { full_name?: string; avatar_url?: string | null }) {
+export function updateMe(data: { full_name?: string; email?: string | null; avatar_url?: string | null }) {
   return apiAuth.patch<UserMe>('/me', data)
 }

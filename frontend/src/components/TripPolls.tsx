@@ -2,13 +2,83 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getPolls, createPoll, vote, deletePoll, type Poll } from '../api/polls'
 
-export function TripPolls({ tripId }: { tripId: string }) {
+const POLLS_UPDATED_EVENT = 'trip-polls-updated'
+
+function notifyPollsUpdated(tripId: string) {
+  window.dispatchEvent(new CustomEvent(POLLS_UPDATED_EVENT, { detail: { tripId } }))
+}
+
+export function TripPollsCreate({ tripId }: { tripId: string }) {
+  const [question, setQuestion] = useState('')
+  const [options, setOptions] = useState<string[]>(['', ''])
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    const cleanOptions = options.map((s) => s.trim()).filter(Boolean)
+    if (cleanOptions.length < 2) return
+    try {
+      await createPoll(tripId, { question: question.trim(), options: cleanOptions })
+      setQuestion('')
+      setOptions(['', ''])
+      notifyPollsUpdated(tripId)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  function updateOption(idx: number, value: string) {
+    setOptions((prev) => prev.map((item, i) => (i === idx ? value : item)))
+  }
+
+  function addOptionField() {
+    setOptions((prev) => [...prev, ''])
+  }
+
+  function removeOptionField(idx: number) {
+    setOptions((prev) => (prev.length <= 2 ? prev : prev.filter((_, i) => i !== idx)))
+  }
+
+  return (
+    <div className="card board-widget board-widget--polls">
+      <form className="board-widget__form" onSubmit={handleCreate}>
+        <label>Вопрос</label>
+        <input value={question} onChange={(e) => setQuestion(e.target.value)} required />
+        <label>Варианты</label>
+        <div className="poll-create-options">
+          {options.map((opt, idx) => (
+            <div key={`poll-option-input-${idx}`} className="poll-create-options__row">
+              <input
+                value={opt}
+                onChange={(e) => updateOption(idx, e.target.value)}
+                placeholder={`Вариант ${idx + 1}`}
+                required={idx < 2}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary btn-compact"
+                onClick={() => removeOptionField(idx)}
+                disabled={options.length <= 2}
+                aria-label="Удалить вариант"
+                title="Удалить вариант"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <button type="button" className="btn btn-secondary btn-compact" onClick={addOptionField}>
+            + Добавить вариант
+          </button>
+        </div>
+        <button type="submit">Создать опрос</button>
+      </form>
+    </div>
+  )
+}
+
+export function TripPollsResults({ tripId }: { tripId: string }) {
   const { user } = useAuth()
   const [polls, setPolls] = useState<Poll[]>([])
   const [loading, setLoading] = useState(true)
-  const [question, setQuestion] = useState('')
-  const [optionsText, setOptionsText] = useState('')
-  const [collapsed, setCollapsed] = useState(false)
 
   function getTopOptionText(poll: Poll) {
     if (poll.options.length === 0) return 'нет вариантов'
@@ -36,23 +106,19 @@ export function TripPolls({ tripId }: { tripId: string }) {
     load()
   }, [tripId])
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault()
-    const options = optionsText.split('\n').map((s) => s.trim()).filter(Boolean)
-    if (options.length < 2) return
-    try {
-      await createPoll(tripId, { question, options })
-      setQuestion('')
-      setOptionsText('')
-      load()
-    } catch (err) {
-      console.error(err)
+  useEffect(() => {
+    function onUpdated(e: Event) {
+      const ce = e as CustomEvent<{ tripId?: string }>
+      if (ce.detail?.tripId === tripId) load()
     }
-  }
+    window.addEventListener(POLLS_UPDATED_EVENT, onUpdated)
+    return () => window.removeEventListener(POLLS_UPDATED_EVENT, onUpdated)
+  }, [tripId])
 
   async function handleVote(pollId: string, optionId: string) {
     try {
       await vote(tripId, pollId, optionId)
+      notifyPollsUpdated(tripId)
       load()
     } catch (err) {
       console.error(err)
@@ -63,6 +129,7 @@ export function TripPolls({ tripId }: { tripId: string }) {
     if (!confirm('Удалить этот опрос?')) return
     try {
       await deletePoll(tripId, pollId)
+      notifyPollsUpdated(tripId)
       load()
     } catch (err) {
       console.error(err)
@@ -73,13 +140,6 @@ export function TripPolls({ tripId }: { tripId: string }) {
 
   return (
     <div className="card board-widget board-widget--polls">
-      <div className="poll-head-simple">
-        <h2>Голосования</h2>
-        <button type="button" className="btn btn-secondary btn-compact" onClick={() => setCollapsed((v) => !v)}>
-          {collapsed ? 'Развернуть' : 'Свернуть'}
-        </button>
-      </div>
-
       {polls.length > 0 && (
         <div className="poll-summary-simple">
           {polls.map((poll) => (
@@ -91,68 +151,51 @@ export function TripPolls({ tripId }: { tripId: string }) {
         </div>
       )}
 
-      {!collapsed && (
-        <>
-          <form className="board-widget__form" onSubmit={handleCreate}>
-            <label>Вопрос</label>
-            <input value={question} onChange={(e) => setQuestion(e.target.value)} required />
-            <label>Варианты (каждый с новой строки)</label>
-            <textarea
-              value={optionsText}
-              onChange={(e) => setOptionsText(e.target.value)}
-              placeholder="Вариант 1&#10;Вариант 2"
-              rows={3}
-              required
-            />
-            <button type="submit">Создать опрос</button>
-          </form>
-          <div className="poll-list-simple">
-            {polls.map((poll) => (
-              <div key={poll.id} className="poll-card-simple">
-                <div className="poll-card-simple__head">
-                  <strong className="poll-card-simple__question">{poll.question}</strong>
-                  {user?.id === poll.created_by && (
-                    <button type="button" className="btn btn-danger btn-compact" onClick={() => handleDeletePoll(poll.id)}>
-                      ✕
-                    </button>
-                  )}
-                </div>
-                <ul className="poll-card-simple__options">
-                  {poll.options.map((opt) => (
-                    <li
-                      key={opt.id}
-                      className={`poll-option-simple ${poll.my_option_id === opt.id ? 'poll-option-simple--voted' : ''}`}
-                      onClick={() => handleVote(poll.id, opt.id)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          handleVote(poll.id, opt.id)
-                        }
-                      }}
-                    >
-                      <span className="poll-option-simple__text">
-                        {opt.text}
-                        <span className="poll-option-simple__count">{opt.vote_count}</span>
-                      </span>
-                      <div
-                        className="poll-option-simple__bar"
-                        style={{
-                          width: `${Math.max(
-                            8,
-                            Math.round((opt.vote_count / Math.max(1, getTopOption(poll)?.vote_count || 1)) * 100),
-                          )}%`,
-                        }}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+      <div className="poll-list-simple">
+        {polls.map((poll) => (
+          <div key={poll.id} className="poll-card-simple">
+            <div className="poll-card-simple__head">
+              <strong className="poll-card-simple__question">{poll.question}</strong>
+              {user?.id === poll.created_by && (
+                <button type="button" className="btn btn-danger btn-compact" onClick={() => handleDeletePoll(poll.id)}>
+                  ✕
+                </button>
+              )}
+            </div>
+            <ul className="poll-card-simple__options">
+              {poll.options.map((opt) => (
+                <li
+                  key={opt.id}
+                  className={`poll-option-simple ${poll.my_option_id === opt.id ? 'poll-option-simple--voted' : ''}`}
+                  onClick={() => handleVote(poll.id, opt.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      handleVote(poll.id, opt.id)
+                    }
+                  }}
+                >
+                  <span className="poll-option-simple__text">
+                    {opt.text}
+                    <span className="poll-option-simple__count">{opt.vote_count}</span>
+                  </span>
+                  <div
+                    className="poll-option-simple__bar"
+                    style={{
+                      width: `${Math.max(
+                        8,
+                        Math.round((opt.vote_count / Math.max(1, getTopOption(poll)?.vote_count || 1)) * 100),
+                      )}%`,
+                    }}
+                  />
+                </li>
+              ))}
+            </ul>
           </div>
-        </>
-      )}
+        ))}
+      </div>
     </div>
   )
 }

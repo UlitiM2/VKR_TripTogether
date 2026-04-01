@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { getMessages, sendMessage, getChatWebSocketUrl, type Message } from '../api/chat'
 import { useAuth } from '../context/AuthContext'
+import { getUserProfile } from '../api/user'
+import { formatUserDisplayName } from '../api/auth'
 
 export function TripChat({ tripId }: { tripId: string }) {
   const { user } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
+  const [namesByUserId, setNamesByUserId] = useState<Record<string, string>>({})
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(true)
   const listRef = useRef<HTMLDivElement>(null)
@@ -57,6 +60,33 @@ export function TripChat({ tripId }: { tripId: string }) {
     listRef.current?.scrollTo(0, listRef.current.scrollHeight)
   }, [messages])
 
+  useEffect(() => {
+    const ids = new Set(messages.map((m) => m.author_user_id))
+    const idsToFetch = Array.from(ids).filter((id) => !namesByUserId[id])
+    if (idsToFetch.length === 0) return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const pairs = await Promise.all(
+          idsToFetch.map(async (id) => {
+            const { data } = await getUserProfile(id)
+            const name = formatUserDisplayName(data)
+            return [id, name] as const
+          }),
+        )
+        if (cancelled) return
+        setNamesByUserId((prev) => ({ ...prev, ...Object.fromEntries(pairs) }))
+      } catch {
+        // Если имена подгрузить не получилось — используем fallback (short id).
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [messages, namesByUserId])
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault()
     const text = input.trim()
@@ -74,12 +104,12 @@ export function TripChat({ tripId }: { tripId: string }) {
 
   return (
     <div className="card board-widget board-widget--chat">
-      <h2>Чат</h2>
       <div ref={listRef} className="chat-thread-simple">
         {messages.map((m) => (
           <div key={m.id} className={`chat-msg-simple ${user?.id === m.author_user_id ? 'chat-msg-simple--own' : ''}`}>
             <span className="chat-msg-simple__meta">
-              {new Date(m.created_at).toLocaleString()} ({m.author_user_id.slice(0, 8)}…)
+              {(namesByUserId[m.author_user_id] || m.author_user_id.slice(0, 8) + '…')}{' '}
+              {new Date(m.created_at).toLocaleString('ru-RU')}
             </span>
             <div className="chat-msg-simple__body">{m.content}</div>
           </div>

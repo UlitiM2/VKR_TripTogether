@@ -288,7 +288,7 @@ async def update_trip(
     user_data: dict = Depends(verify_token),
     db: Session = Depends(get_db),
 ):
-    """Обновление поездки (название/направление/даты) — только организатор."""
+    """Обновление поездки (название/направление/даты/описание) — только организатор."""
     user_uuid = uuid.UUID(user_data.get("user_id") or user_data.get("sub"))
     trip = get_trip_if_accessible(db, trip_id, user_uuid)
     if not is_trip_organizer(trip, user_uuid, db):
@@ -317,6 +317,9 @@ async def update_trip(
         trip.start_date = updates["start_date"]
     if "end_date" in updates:
         trip.end_date = updates["end_date"]
+    if "description" in updates:
+        description = (updates["description"] or "").strip()
+        trip.description = description or None
     if trip.start_date and trip.end_date and trip.start_date > trip.end_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

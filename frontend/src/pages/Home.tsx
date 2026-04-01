@@ -30,7 +30,7 @@ export function Home() {
 
       <section className="home-section">
         <h2 className="home-section__title">Зачем это нужно</h2>
-        <p className="home-section__text">
+        <p className="home-section__text home-section__text--center">
           Когда едете не один, быстро теряются договоренности: кто за что платил, куда всем удобнее,
           что выбрать из вариантов. TripTogether помогает держать поездку в одном пространстве.
         </p>
@@ -63,23 +63,35 @@ export function Home() {
       </section>
 
       <section className="home-section">
-        <h2 className="home-section__title">Как выглядит интерфейс</h2>
-        <p className="home-section__text">
-          Ниже — примеры экранов, с которыми вы будете работать каждый день.
+        <h2 className="home-section__title">Планирование без лишнего</h2>
+        <p className="home-section__text home-section__text--center">
+          Смотрите актуальную информацию в одном месте и быстро договаривайтесь с друзьями — от идей до итоговых решений.
         </p>
         <div className="home-previews">
           <article className="home-preview">
-            <div className="home-preview__mock home-preview__mock--board" aria-hidden />
+            <img
+              className="home-preview__mock home-preview__mock--board"
+              src="/home-previews/board.png"
+              alt="Пример интерфейса: доска поездки"
+            />
             <h3 className="home-preview__title">Доска поездки</h3>
             <p className="home-preview__text">Участники, голосования, расходы и чат в одном окне.</p>
           </article>
           <article className="home-preview">
-            <div className="home-preview__mock home-preview__mock--map" aria-hidden />
+            <img
+              className="home-preview__mock home-preview__mock--map"
+              src="/home-previews/map.png"
+              alt="Пример интерфейса: карта поездки"
+            />
             <h3 className="home-preview__title">Поездки + карта</h3>
             <p className="home-preview__text">Список поездок и отметки направлений на карте.</p>
           </article>
           <article className="home-preview">
-            <div className="home-preview__mock home-preview__mock--profile" aria-hidden />
+            <img
+              className="home-preview__mock home-preview__mock--profile"
+              src="/home-previews/profile.png"
+              alt="Пример интерфейса: профиль пользователя"
+            />
             <h3 className="home-preview__title">Профиль</h3>
             <p className="home-preview__text">Имя, фамилия и фото профиля в удобной форме.</p>
           </article>

@@ -41,7 +41,7 @@ export function deleteTrip(id: string) {
 
 export function updateTrip(
   id: string,
-  data: { title?: string; destination?: string | null; start_date?: string; end_date?: string },
+  data: { title?: string; destination?: string | null; start_date?: string; end_date?: string; description?: string | null },
 ) {
   return apiTrip.patch<Trip>(`/trips/${id}`, data)
 }

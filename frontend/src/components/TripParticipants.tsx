@@ -71,7 +71,6 @@ export function TripParticipants({ tripId }: { tripId: string }) {
 
   return (
     <div className="card board-widget board-widget--people">
-      <h2>Участники</h2>
       <ul className="participant-list-simple">
         {list.map((p) => (
           <li key={p.user_id} className="participant-item-simple">
