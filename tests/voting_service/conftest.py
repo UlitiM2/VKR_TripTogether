@@ -20,8 +20,14 @@ VOTING_SERVICE_DIR = REPO_ROOT / "voting-service"
 
 os.environ.setdefault(
     "DATABASE_URL",
-    os.getenv("TEST_DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/tripplanner"),
+    os.getenv("TEST_DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/tripplanner_test"),
 )
+_db_url = os.environ["DATABASE_URL"]
+if "tripplanner_test" not in _db_url:
+    pytest.skip(
+        "Небезопасный DATABASE_URL для тестов. Используйте TEST_DATABASE_URL с БД tripplanner_test.",
+        allow_module_level=True,
+    )
 
 # Сначала создаём таблицы trips (FK из polls)
 sys.path.insert(0, str(TRIP_SERVICE_DIR))

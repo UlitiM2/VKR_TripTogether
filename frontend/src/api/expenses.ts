@@ -17,6 +17,10 @@ export interface DebtItem {
   amount: number
 }
 
+export interface ExpenseSplitResponse {
+  user_ids: string[]
+}
+
 export interface DebtsSummary {
   debts: DebtItem[]
 }
@@ -38,4 +42,8 @@ export function getDebts(tripId: string) {
 
 export function deleteExpense(tripId: string, expenseId: string) {
   return apiBudget.delete(`/trips/${tripId}/expenses/${expenseId}`)
+}
+
+export function getExpenseSplitBetween(tripId: string, expenseId: string) {
+  return apiBudget.get<ExpenseSplitResponse>(`/trips/${tripId}/expenses/${expenseId}/split`)
 }

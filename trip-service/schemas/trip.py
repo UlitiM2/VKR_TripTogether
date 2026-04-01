@@ -18,6 +18,7 @@ class TripUpdate(BaseModel):
     destination: Optional[str] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+    description: Optional[str] = None
 
 
 class TripResponse(BaseModel):

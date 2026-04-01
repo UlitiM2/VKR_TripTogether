@@ -1,8 +1,9 @@
 from typing import Optional
+import re
 from fastapi import FastAPI, Depends, HTTPException, status, Query, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 import logging
@@ -186,6 +187,7 @@ async def read_users_me(current_user_id: str = Depends(get_current_user), db=Dep
 class UserUpdate(BaseModel):
     """Обновление профиля (PATCH /auth/me)."""
     full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
     avatar_url: Optional[str] = None
 
 
@@ -200,7 +202,33 @@ async def update_me(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     if "full_name" in body.model_fields_set:
-        user.full_name = body.full_name
+        if body.full_name is None:
+            user.full_name = None
+        else:
+            cleaned = body.full_name.strip()
+            if cleaned == "":
+                user.full_name = None
+            else:
+                parts = cleaned.split()
+                # ожидаем "Имя Фамилия" (1-2 слова)
+                if len(parts) > 2:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Full name must contain only letters",
+                    )
+                letter_re = re.compile(r"^[A-Za-zА-Яа-яЁё]+$")
+                for p in parts:
+                    if not letter_re.fullmatch(p):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Full name must contain only letters",
+                        )
+                user.full_name = cleaned
+    if "email" in body.model_fields_set and body.email:
+        existing = db.query(User).filter(User.email == str(body.email), User.id != current_user_id).first()
+        if existing:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+        user.email = str(body.email)
     if "avatar_url" in body.model_fields_set:
         user.avatar_url = body.avatar_url
     db.commit()

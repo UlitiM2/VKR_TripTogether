@@ -9,7 +9,8 @@ export function Layout() {
   const isTripPage = location.pathname.startsWith('/trip/')
   const isTripsPage = location.pathname === '/trips'
   const isHomePage = location.pathname === '/'
-  const isWideLayout = isTripPage || isTripsPage || isHomePage
+  const isProfilePage = location.pathname === '/profile'
+  const isWideLayout = isTripPage || isTripsPage || isHomePage || isProfilePage
 
   return (
     <>

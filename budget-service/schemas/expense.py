@@ -41,3 +41,8 @@ class DebtItem(BaseModel):
 class DebtsSummary(BaseModel):
     """Итог по долгам: минимальный набор переводов для закрытия расчётов."""
     debts: list[DebtItem] = []
+
+
+class ExpenseSplitResponse(BaseModel):
+    """Список пользователей, между кем делился расход."""
+    user_ids: list[uuid.UUID] = Field(default_factory=list)

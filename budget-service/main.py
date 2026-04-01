@@ -23,6 +23,7 @@ from schemas.expense import (
     ExpenseResponse,
     DebtsSummary,
     DebtItem,
+    ExpenseSplitResponse,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -265,6 +266,32 @@ async def list_expenses(
             )
         )
     return result
+
+
+@app.get(
+    "/trips/{trip_id}/expenses/{expense_id}/split",
+    response_model=ExpenseSplitResponse,
+)
+async def get_expense_split(
+    trip_id: str,
+    expense_id: str,
+    user_data: dict = Depends(verify_token),
+    trip_access: dict = Depends(check_trip_access),
+    db: Session = Depends(get_db),
+):
+    """Вернуть пользователей, между кем делился конкретный расход."""
+    trip_uuid = _parse_uuid(trip_id, "Trip")
+    exp_uuid = _parse_uuid(expense_id, "Expense")
+    expense = (
+        db.query(Expense)
+        .filter(Expense.id == exp_uuid, Expense.trip_id == trip_uuid)
+        .first()
+    )
+    if not expense:
+        raise HTTPException(status_code=404, detail="Expense not found")
+
+    rows = db.query(ExpenseShare.user_id).filter(ExpenseShare.expense_id == expense.id).all()
+    return ExpenseSplitResponse(user_ids=[uid for (uid,) in rows])
 
 
 @app.get("/trips/{trip_id}/expenses/debts", response_model=DebtsSummary)
