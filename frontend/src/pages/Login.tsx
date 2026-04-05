@@ -3,6 +3,19 @@ import { Link, useNavigate } from 'react-router-dom'
 import { login } from '../api/auth'
 import { useAuth } from '../context/AuthContext'
 
+function formatLoginError(detail: unknown): string {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((x) =>
+        typeof x === 'object' && x !== null && 'msg' in x ? String((x as { msg: unknown }).msg) : '',
+      )
+      .filter(Boolean)
+    if (parts.length) return parts.join(' ')
+  }
+  return 'Ошибка входа'
+}
+
 export function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -18,8 +31,8 @@ export function Login() {
       setToken(data.access_token)
       navigate('/')
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(typeof msg === 'string' ? msg : 'Ошибка входа')
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+      setError(formatLoginError(detail))
     }
   }
 
@@ -47,6 +60,9 @@ export function Login() {
             required
             autoComplete="current-password"
           />
+          <p style={{ margin: '-0.35rem 0 0.75rem', fontSize: '0.9rem' }}>
+            <Link to="/forgot-password">Забыли пароль?</Link>
+          </p>
           <button type="submit">Войти</button>
         </form>
         <p style={{ marginTop: '1rem' }}>

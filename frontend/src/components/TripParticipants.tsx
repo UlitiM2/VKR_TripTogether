@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { getParticipants, inviteParticipant, type Participant } from '../api/participants'
+import { getParticipants, inviteParticipant, acceptInvitation, type Participant } from '../api/participants'
 import { getUserProfile } from '../api/user'
+import { useAuth } from '../context/AuthContext'
 
 function shortId(id: string) {
   return id.length > 10 ? `${id.slice(0, 8)}…` : id
@@ -12,11 +13,14 @@ type ParticipantMeta = {
 }
 
 export function TripParticipants({ tripId }: { tripId: string }) {
+  const { user } = useAuth()
   const [list, setList] = useState<Participant[]>([])
   const [metaByUserId, setMetaByUserId] = useState<Record<string, ParticipantMeta>>({})
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [accepting, setAccepting] = useState(false)
+  const [acceptError, setAcceptError] = useState('')
 
   async function load() {
     try {
@@ -67,10 +71,44 @@ export function TripParticipants({ tripId }: { tripId: string }) {
     }
   }
 
+  async function handleAcceptInvite() {
+    setAcceptError('')
+    setAccepting(true)
+    try {
+      await acceptInvitation(tripId)
+      await load()
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setAcceptError(typeof msg === 'string' ? msg : 'Не удалось принять приглашение')
+    } finally {
+      setAccepting(false)
+    }
+  }
+
+  const myPending = user?.id
+    ? list.find((p) => p.user_id === user.id && !p.accepted_at)
+    : undefined
+
   if (loading) return <div className="loading">Загрузка...</div>
 
   return (
     <div className="card board-widget board-widget--people">
+      {myPending && (
+        <div className="trip-invite-banner" role="status">
+          <p className="trip-invite-banner__text">
+            Вас пригласили в эту поездку. Нажмите «Принять», чтобы закрепить участие — до этого в списке отображается статус «приглашён».
+          </p>
+          {acceptError && <div className="error trip-invite-banner__err">{acceptError}</div>}
+          <button
+            type="button"
+            className="btn trip-invite-banner__btn"
+            disabled={accepting}
+            onClick={handleAcceptInvite}
+          >
+            {accepting ? 'Сохранение…' : 'Принять приглашение'}
+          </button>
+        </div>
+      )}
       <ul className="participant-list-simple">
         {list.map((p) => (
           <li key={p.user_id} className="participant-item-simple">

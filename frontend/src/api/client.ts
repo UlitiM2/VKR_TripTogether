@@ -41,7 +41,20 @@ const withToken = (config: InternalAxiosRequestConfig) => {
   return config
 }
 
-apiAuth.interceptors.request.use(withToken)
+const AUTH_PUBLIC_SEGMENTS = new Set(['login', 'register', 'forgot-password', 'reset-password'])
+
+/** Не передавать старый JWT на публичные эндпоинты auth (логин/регистрация/сброс пароля). */
+const withAuthApiToken = (config: InternalAxiosRequestConfig) => {
+  const raw = config.url ?? ''
+  const path = raw.split('?')[0]
+  const lastSegment = path.split('/').filter(Boolean).pop() ?? ''
+  if (AUTH_PUBLIC_SEGMENTS.has(lastSegment)) {
+    return config
+  }
+  return withToken(config)
+}
+
+apiAuth.interceptors.request.use(withAuthApiToken)
 
 ;[apiUser, apiTrip, apiVoting, apiBudget, apiChat].forEach((api) => {
   api.interceptors.request.use(withToken)

@@ -48,7 +48,7 @@ def _send_email(to_emails: list[str], subject: str, body_text: str) -> None:
 
 class NotifyPayload(BaseModel):
     """Тело запроса на отправку уведомления."""
-    event: str = Field(..., description="invite | new_poll | new_chat_message")
+    event: str = Field(..., description="invite | new_poll | new_chat_message | password_reset")
     to_emails: list[str] = Field(..., min_length=1)
     data: dict = Field(default_factory=dict)
 
@@ -57,7 +57,10 @@ def _render_invite(data: dict) -> tuple[str, str]:
     trip_title = data.get("trip_title", "Поездка")
     inviter_name = data.get("inviter_name", "Участник")
     subject = f"Приглашение в поездку: {trip_title}"
-    body = f"Здравствуйте.\n\n{inviter_name} приглашает вас в поездку «{trip_title}».\n\nВойдите в TripPlanner, чтобы принять приглашение."
+    body = (
+        f"Здравствуйте.\n\n{inviter_name} приглашает вас в поездку «{trip_title}».\n\n"
+        "Войдите в TripPlanner, откройте эту поездку и в блоке «Участники» нажмите «Принять приглашение»."
+    )
     return subject, body
 
 
@@ -66,6 +69,18 @@ def _render_new_poll(data: dict) -> tuple[str, str]:
     question = data.get("question", "Новый опрос")
     subject = f"Новое голосование: {trip_title}"
     body = f"В поездке «{trip_title}» создано голосование:\n\n{question}\n\nЗайдите в приложение, чтобы проголосовать."
+    return subject, body
+
+
+def _render_password_reset(data: dict) -> tuple[str, str]:
+    reset_url = data.get("reset_url", "")
+    subject = "Сброс пароля TripPlanner"
+    body = (
+        "Здравствуйте.\n\n"
+        "Вы запросили сброс пароля. Перейдите по ссылке (она действует ограниченное время):\n\n"
+        f"{reset_url}\n\n"
+        "Если вы не запрашивали сброс, проигнорируйте это письмо."
+    )
     return subject, body
 
 
@@ -107,7 +122,7 @@ async def health():
 async def send_notification(payload: NotifyPayload):
     """
     Внутренний эндпоинт. Отправка email по событию.
-    event: invite | new_poll | new_chat_message
+    event: invite | new_poll | new_chat_message | password_reset
     to_emails: список адресов
     data: параметры для шаблона (trip_title, inviter_name, question, author_name, message_preview и т.д.)
     """
@@ -123,6 +138,8 @@ async def send_notification(payload: NotifyPayload):
         subject, body = _render_new_poll(data)
     elif event == "new_chat_message":
         subject, body = _render_new_chat_message(data)
+    elif event == "password_reset":
+        subject, body = _render_password_reset(data)
     else:
         raise HTTPException(status_code=400, detail=f"Unknown event: {event}")
 

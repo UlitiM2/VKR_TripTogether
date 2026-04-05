@@ -49,7 +49,7 @@ DEFAULT_ACHIEVEMENTS = [
         "id": "budget-master",
         "icon": "💰",
         "title": "Мастер бюджета",
-        "requirement": "Добавьте 20 расходов и закройте расчеты долгов без конфликтов.",
+        "requirement": "Добавьте 20 расходов и закройте расчёты долгов.",
         "target": 20,
         "default_current": 11,
     },
@@ -68,6 +68,30 @@ DEFAULT_ACHIEVEMENTS = [
         "requirement": "Завершите 5 поездок в разные города.",
         "target": 5,
         "default_current": 1,
+    },
+    {
+        "id": "trip-veteran",
+        "icon": "🚌",
+        "title": "Ветеран поездок",
+        "requirement": "Примите участие минимум в 10 поездках.",
+        "target": 10,
+        "default_current": 0,
+    },
+    {
+        "id": "lead-organizer",
+        "icon": "📋",
+        "title": "Ведущий организатор",
+        "requirement": "Создайте и ведите минимум 3 поездки как организатор.",
+        "target": 3,
+        "default_current": 0,
+    },
+    {
+        "id": "budget-starter",
+        "icon": "🧾",
+        "title": "Старт в бюджете",
+        "requirement": "Будьте указаны как плательщик минимум в 5 тратах.",
+        "target": 5,
+        "default_current": 0,
     },
 ]
 
@@ -288,6 +312,9 @@ async def get_my_achievements(
         "budget-master": max(0, expenses_paid_total),
         "active-voter": max(0, voted_polls_total),
         "traveler": max(0, finished_trips_total),
+        "trip-veteran": max(0, len(trips)),
+        "lead-organizer": max(0, len(organized_trips)),
+        "budget-starter": max(0, expenses_paid_total),
     }
 
     achievements: list[AchievementItem] = []

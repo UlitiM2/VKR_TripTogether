@@ -9,7 +9,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "" # тут ключ
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    
+
+    NOTIFICATION_SERVICE_URL: str = "http://notification-service:8000"
+    FRONTEND_BASE_URL: str = "http://localhost:5173"
+
     #class Config:
         #env_file = ".env"
 
