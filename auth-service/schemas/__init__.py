@@ -1,0 +1,1 @@
+"""SQLAlchemy-модели auth-service."""

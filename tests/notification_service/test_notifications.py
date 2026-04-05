@@ -23,6 +23,20 @@ def test_send_invite_without_emails_error(client: TestClient):
     assert r.json().get("detail") == "to_emails required"
 
 
+def test_send_password_reset_success(client: TestClient):
+  payload = {
+    "event": "password_reset",
+    "to_emails": ["user@example.com"],
+    "data": {"reset_url": "http://localhost:5173/reset-password?token=abc"},
+  }
+  r = client.post("/internal/send", json=payload)
+  assert r.status_code == 200
+  data = r.json()
+  assert data["sent"] is True
+  assert data["event"] == "password_reset"
+  assert data["to"] == ["user@example.com"]
+
+
 def test_send_new_chat_message_success(client: TestClient):
   payload = {
     "event": "new_chat_message",

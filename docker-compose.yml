@@ -54,9 +54,13 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@postgres/tripplanner
       - SECRET_KEY= # тут ключ
       - ALGORITHM=HS256
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8000
+      - FRONTEND_BASE_URL=http://localhost:5173
     depends_on:
       postgres:
         condition: service_healthy
+      notification-service:
+        condition: service_started
     volumes:
       - ./auth-service:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload

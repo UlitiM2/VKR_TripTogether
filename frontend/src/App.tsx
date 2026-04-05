@@ -3,6 +3,8 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { Layout } from './components/Layout'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
+import { ForgotPassword } from './pages/ForgotPassword'
+import { ResetPassword } from './pages/ResetPassword'
 import { Home } from './pages/Home.tsx'
 import { Trips } from './pages/Trips'
 import { TripDetail } from './pages/TripDetail'
@@ -29,6 +31,8 @@ function AppRoutes() {
         <Route index element={<Home />} />
         <Route path="login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
         <Route path="register" element={<PublicOnlyRoute><Register /></PublicOnlyRoute>} />
+        <Route path="forgot-password" element={<ForgotPassword />} />
+        <Route path="reset-password" element={<ResetPassword />} />
         <Route path="trips" element={<ProtectedRoute><Trips /></ProtectedRoute>} />
         <Route path="trip/:tripId" element={<ProtectedRoute><TripDetail /></ProtectedRoute>} />
         <Route path="profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
